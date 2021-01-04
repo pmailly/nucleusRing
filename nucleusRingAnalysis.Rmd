@@ -21,58 +21,64 @@ findFiles <- function(param) {
   return(inDir)
 }
 ```
-#### Find peak's width
+#### Find ring peaks
 ```{r}
 findPeaks <- function(plot, min) {
-  peaks_found <- IDPmisc::peaks(plot, minPH = min)
+  pts <- IDPmisc::peaks(plot, minPH = min)
+  # sort peak by height take the 2 first
+  pts_sorted <- pts[order(-pts$y),]
+  peaks_found <- pts_sorted[1:2,]
   return(peaks_found)
 }
 ```
-#### Find ratio between membrane and inside nucleus
-```{r}
- ratio <- function(x, y) {
-  # find peak 2 max intensity
-  max_peaks_ring <- findpeaks(y, sortstr = TRUE, npeaks = 2)
-  # order by distance
-  max_peaks_sorted <- max_peaks_ring[order(max_peaks_ring[,2]),]
-  # find limits between peaks first right second left
-  limit1 <- max_peaks_sorted[1,4]
-  limit2 <- max_peaks_sorted[2,3]
-  # find max peaks inside max peaks 1 and 2
-  plotData_maxs <- y[limit1:limit2]
-  max_peaks_nucleus <- findpeaks(plotData_maxs, sortstr = TRUE)
-  # Intensity ratio mean max peaks ring / mean max peaks inside nucleus
-  mean_max_peaks_ring <- mean(max_peaks_ring[,1])
-  mean_max_peaks_nucleus <- mean(max_peaks_nucleus[,1])
-  mean_ratio <- mean_max_peaks_ring / mean_max_peaks_nucleus
-  results <- list(mean_max_peaks_ring, mean_max_peaks_nucleus, mean_ratio)
-  return(results)
- }
-```
-
 #### Read data profile find and plot peaks
 ```{r}
 readPlotProfile <- function(data, inDir, files, condition, smooth_fac) {
   for (i in seq_along(files)) {
     file <- basename(file_path_sans_ext(files[i]))
     plotdata <- read.csv(file = paste0(inDir, dirSep,files[i]), header = TRUE, sep = '\t')
+
     # smooth curve
     plot.sm <- smooth.spline(plotdata, spar = smooth_fac)
-    # find ratio ring / nucleus
-    means <- unlist(ratio(plot.sm$x, plot.sm$y))
     
     # Find peaks
-    pts <- findPeaks(plot.sm, 0.7)
-    sp <- ggplot(plotdata, aes(x = Distance_.microns., y = Gray_Value)) + geom_line() + geom_point() + geom_point(data = pts, aes(x = x, y = y), color = "green") + geom_line(aes(x = plot.sm$x, y = plot.sm$y), linetype = "dashed", color="red") + labs(x = "distance (µm)", y = "gray value") + geom_hline(yintercept = means[1], linetype = "dashed", color="blue") + geom_hline(yintercept = means[2], linetype = "dashed", color="purple")
+    peaks_found <- findPeaks(plot.sm, 0.7)
+    # ring mean peaks
+    ring_mean <- mean(peaks_found$y)
+    # ring mean width
+    ring_width <- mean(peaks_found$w)
+    
+    # limits inside ring
+    limit1 <- peaks_found$x[1] + peaks_found$w[1]
+    limit2 <- peaks_found$x[2] - peaks_found$w[2]
+    index1 <- which.min(abs(plot.sm$x - limit1))
+    index2 <- which.min(abs(plot.sm$x - limit2))
+    print(limit1)
+    print(limit2)
+    print(index1)
+    print(index2)
+                        
+    # find peaks inside ring
+    inside_x <- plot.sm$x[index1:index2]
+    inside_y <- plot.sm$y[index1:index2]
+    View(inside_x)
+    View(inside_y)
+    peaks_inside_found <- IDPmisc::peaks(inside_x, inside_y, minPH = 0.7)
+    # mean intensity inside ring
+    ring_inside_mean <- mean(peaks_inside_found$y)
+
+    # find ratio ring / nucleus
+    ratio <- ring_mean / ring_inside_mean
+    break  
+    sp <- ggplot(plotdata, aes(x = Distance_.microns., y = Gray_Value)) + geom_line() + geom_point() + geom_point(data = peaks_found, aes(x = x, y = y), color = "green") + geom_line(aes(x = plot.sm$x, y = plot.sm$y), linetype = "dashed", color="red") + labs(x = "distance (µm)", y = "gray value") + geom_hline(yintercept = ring_mean, linetype = "dashed", color="blue") + geom_hline(yintercept = ring_inside_mean, linetype = "dashed", color="blue") + geom_vline(xintercept = limit1, linetype = "dashed", color="purple") + geom_vline(xintercept = limit2, linetype = "dashed", color="purple")
+    
     # Save graph with peak points
     ggsave(paste0(file,"_plot.pdf"), sp, path=inDir, scale=1, dpi=300)
     
-    ## sort peak by height take 2 first max
-    pts_sorted <- pts[order(-pts$y),]
+    
     
     ## Add peak parameters in data frame
-    data[nrow(data) + 1, ] <- c(file, pts_sorted$w[1], means[3], condition)
-    data[nrow(data) + 1, ] <- c(file, pts_sorted$w[2], "NA", condition)
+    data[nrow(data) + 1, ] <- c(file, ring_width, ratio, condition)
   }
   return(data)
 }
@@ -86,6 +92,7 @@ colnames(dataStats) <- c("ImageName","PeakWidth", "Ratio(ring_nucleus)", "Condit
 #### Ask for condition
 ```{r}
 inDirCtrl <- findFiles("Folder for control condition")
+outDir <- paste0(dirname(dirname(inDirCtrl)),dirSep,"Results")
 files <- list.files(path = inDirCtrl, pattern = "*.xls", full.names = FALSE)
 dataStats <- readPlotProfile(dataStats, inDirCtrl, files, "Ctrl", 0.3)
 inDirExp <- findFiles("Folder for experimental condition")
@@ -94,7 +101,6 @@ dataStats <- readPlotProfile(dataStats, inDirExp, files, "Exp", 0.4)
 ```
 #### Write peak's width data
 ```{r}
-outDir <- paste0(dirname(inDirExp),dirSep,"Results")
 if (!dir.exists(outDir))
   dir.create(outDir)
 write.csv(dataStats, file = file.path(outDir, "peaksStats.csv", fsep = dirSep))
