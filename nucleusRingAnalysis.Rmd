@@ -1,0 +1,151 @@
+---
+title: "Nucleus ring analysis"
+author: Philippe Mailly
+output: html_notebook
+---
+
+### Read data from Fiji plot profile. Find peak of ring. Measure peak width at max/2 height and ratio between ring and nucleus intensity
+
+```{r}
+# install missing libraries
+requiredPackages = c("base", "ggplot2", "IDPmisc", "tools", "rstudioapi", "svDialogs", "stringr", "pracma")
+for(i in requiredPackages){
+  if(!require(i,character.only = TRUE)) install.packages(i)
+  library(i,character.only = TRUE)
+}
+```
+#### Ask for data folder
+```{r}
+findFiles <- function(param) {
+  inDir <- selectDirectory(caption = param, label = "Select", path = NULL)
+  return(inDir)
+}
+```
+#### Find peak's width
+```{r}
+findPeaks <- function(plot, min) {
+  peaks_found <- IDPmisc::peaks(plot, minPH = min)
+  return(peaks_found)
+}
+```
+#### Find ratio between membrane and inside nucleus
+```{r}
+ ratio <- function(x, y) {
+  # find peak 2 max intensity
+  max_peaks_ring <- findpeaks(y, sortstr = TRUE, npeaks = 2)
+  # order by distance
+  max_peaks_sorted <- max_peaks_ring[order(max_peaks_ring[,2]),]
+  # find limits between peaks first right second left
+  limit1 <- max_peaks_sorted[1,4]
+  limit2 <- max_peaks_sorted[2,3]
+  # find max peaks inside max peaks 1 and 2
+  plotData_maxs <- y[limit1:limit2]
+  max_peaks_nucleus <- findpeaks(plotData_maxs, sortstr = TRUE)
+  # Intensity ratio mean max peaks ring / mean max peaks inside nucleus
+  mean_max_peaks_ring <- mean(max_peaks_ring[,1])
+  mean_max_peaks_nucleus <- mean(max_peaks_nucleus[,1])
+  mean_ratio <- mean_max_peaks_ring / mean_max_peaks_nucleus
+  results <- list(mean_max_peaks_ring, mean_max_peaks_nucleus, mean_ratio)
+  return(results)
+ }
+```
+
+#### Read data profile find and plot peaks
+```{r}
+readPlotProfile <- function(data, inDir, files, condition, smooth_fac) {
+  for (i in seq_along(files)) {
+    file <- basename(file_path_sans_ext(files[i]))
+    plotdata <- read.csv(file = paste0(inDir, dirSep,files[i]), header = TRUE, sep = '\t')
+    # smooth curve
+    plot.sm <- smooth.spline(plotdata, spar = smooth_fac)
+    # find ratio ring / nucleus
+    means <- unlist(ratio(plot.sm$x, plot.sm$y))
+    
+    # Find peaks
+    pts <- findPeaks(plot.sm, 0.7)
+    sp <- ggplot(plotdata, aes(x = Distance_.microns., y = Gray_Value)) + geom_line() + geom_point() + geom_point(data = pts, aes(x = x, y = y), color = "green") + geom_line(aes(x = plot.sm$x, y = plot.sm$y), linetype = "dashed", color="red") + labs(x = "distance (µm)", y = "gray value") + geom_hline(yintercept = means[1], linetype = "dashed", color="blue") + geom_hline(yintercept = means[2], linetype = "dashed", color="purple")
+    # Save graph with peak points
+    ggsave(paste0(file,"_plot.pdf"), sp, path=inDir, scale=1, dpi=300)
+    
+    ## sort peak by height take 2 first max
+    pts_sorted <- pts[order(-pts$y),]
+    
+    ## Add peak parameters in data frame
+    data[nrow(data) + 1, ] <- c(file, pts_sorted$w[1], means[3], condition)
+    data[nrow(data) + 1, ] <- c(file, pts_sorted$w[2], "NA", condition)
+  }
+  return(data)
+}
+```
+#### Create results file
+```{r}
+dirSep <- .Platform$file.sep
+dataStats <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(dataStats) <- c("ImageName","PeakWidth", "Ratio(ring_nucleus)", "Condition")
+```
+#### Ask for condition
+```{r}
+inDirCtrl <- findFiles("Folder for control condition")
+files <- list.files(path = inDirCtrl, pattern = "*.xls", full.names = FALSE)
+dataStats <- readPlotProfile(dataStats, inDirCtrl, files, "Ctrl", 0.3)
+inDirExp <- findFiles("Folder for experimental condition")
+files <- list.files(path = inDirExp, pattern = "*.xls", full.names = FALSE)
+dataStats <- readPlotProfile(dataStats, inDirExp, files, "Exp", 0.4)
+```
+#### Write peak's width data
+```{r}
+outDir <- paste0(dirname(inDirExp),dirSep,"Results")
+if (!dir.exists(outDir))
+  dir.create(outDir)
+write.csv(dataStats, file = file.path(outDir, "peaksStats.csv", fsep = dirSep))
+```
+#### Plot peak's width
+```{r}
+# read peak's width
+df <- read.csv(file = file.path(outDir, "peaksStats.csv", fsep = dirSep), sep = ',', header = TRUE)
+p <- ggplot(df, aes(x=Condition, y=PeakWidth)) + geom_dotplot(binaxis='y', stackdir='center') +
+stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), 
+        geom="errorbar", color="red", width=0.2) + stat_summary(fun=mean, geom="point", color="red") + xlab("Condition") + ylab("ring width (µm)")
+ggsave(file = 'peakWith_plot.pdf', p, path=outDir, scale=1, dpi=300)
+```
+#### Plot peak's ratio ring / nucleus
+```{r}
+# read peak's ratio
+df <- read.csv(file = file.path(outDir, "peaksStats.csv", fsep = dirSep), sep = ',', header = TRUE)
+p <- ggplot(df, aes(x=Condition, y=df$Ratio.ring_nucleus.)) + geom_dotplot(binaxis='y', stackdir='center') +
+stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), 
+        geom="errorbar", color="red", width=0.2) + stat_summary(fun=mean, geom="point", color="red") + xlab("Condition") + ylab("ratio ring/nucleus intensity")
+ggsave(file = 'ratio_plot.pdf', p, path=outDir, scale=1, dpi=300)
+```
+#### Analyze peak's width
+```{r}
+## Check normality
+ctrl_test <- shapiro.test(subset(df, Condition == "Ctrl")$PeakWidth)
+exp_test <- shapiro.test(subset(df, Condition == "Exp")$PeakWidth)
+##
+# If the Sig. value of the Shapiro-Wilk Test is greater than 0.05, the data is normal. 
+# If it is below 0.05, the data significantly deviate from a normal distribution.
+##
+if ((ctrl_test$p.value > 0.05) | (exp_test$p.value > 0.05)) {
+  testStat <- t.test(df$PeakWidth~df$Condition)
+} else {
+  testStat <- wilcox.test(df$PeakWidth~df$Condition)
+}
+testStat
+```
+#### Analyze ratio ring/nucleus
+```{r}
+## Check normality
+ctrl_test <- shapiro.test(subset(df, Condition == "Ctrl")$Ratio.ring_nucleus.)
+exp_test <- shapiro.test(subset(df, Condition == "Exp")$Ratio.ring_nucleus.)
+##
+# If the Sig. value of the Shapiro-Wilk Test is greater than 0.05, the data is normal. 
+# If it is below 0.05, the data significantly deviate from a normal distribution.
+##
+if ((ctrl_test$p.value > 0.05) | (exp_test$p.value > 0.05)) {
+  testStat <- t.test(df$Ratio.ring_nucleus.~df$Condition)
+} else {
+  testStat <- wilcox.test(df$Ratio.ring_nucleus.~df$Condition)
+}
+testStat
+```
