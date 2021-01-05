@@ -28,10 +28,10 @@ findPeaks <- function(plot, min) {
   # sort peak by height take the 2 first
   pts_sorted <- pts[order(-pts$y),]
   peaks_found <- pts_sorted[1:2,]
-  return(peaks_found)
+  return(peaks_found[order(peaks_found$x),])
 }
 ```
-#### Read data profile find and plot peaks
+#### Read data profile find return smoothed curve
 ```{r}
 readPlotProfile <- function(data, inDir, files, condition, smooth_fac) {
   for (i in seq_along(files)) {
@@ -53,30 +53,24 @@ readPlotProfile <- function(data, inDir, files, condition, smooth_fac) {
     limit2 <- peaks_found$x[2] - peaks_found$w[2]
     index1 <- which.min(abs(plot.sm$x - limit1))
     index2 <- which.min(abs(plot.sm$x - limit2))
-    print(limit1)
-    print(limit2)
-    print(index1)
-    print(index2)
-                        
+   
     # find peaks inside ring
     inside_x <- plot.sm$x[index1:index2]
     inside_y <- plot.sm$y[index1:index2]
-    View(inside_x)
-    View(inside_y)
     peaks_inside_found <- IDPmisc::peaks(inside_x, inside_y, minPH = 0.7)
+
     # mean intensity inside ring
     ring_inside_mean <- mean(peaks_inside_found$y)
-
+    
     # find ratio ring / nucleus
     ratio <- ring_mean / ring_inside_mean
-    break  
-    sp <- ggplot(plotdata, aes(x = Distance_.microns., y = Gray_Value)) + geom_line() + geom_point() + geom_point(data = peaks_found, aes(x = x, y = y), color = "green") + geom_line(aes(x = plot.sm$x, y = plot.sm$y), linetype = "dashed", color="red") + labs(x = "distance (µm)", y = "gray value") + geom_hline(yintercept = ring_mean, linetype = "dashed", color="blue") + geom_hline(yintercept = ring_inside_mean, linetype = "dashed", color="blue") + geom_vline(xintercept = limit1, linetype = "dashed", color="purple") + geom_vline(xintercept = limit2, linetype = "dashed", color="purple")
+    
+    # draw graph
+    sp <- ggplot(plotdata, aes(x = Distance_.microns., y = Gray_Value)) + geom_line() + geom_point() + geom_point(data = peaks_found, aes(x = x, y = y), color = "green") + geom_line(aes(x = plot.sm$x, y = plot.sm$y), linetype = "dashed", color="red") + labs(x = "distance (µm)", y = "gray value") + geom_hline(yintercept = ring_mean, linetype = "dashed", color="blue") + geom_hline(yintercept = ring_inside_mean, linetype = "dashed", color="blue") + geom_vline(xintercept = limit1, linetype = "twodash", color="purple") + geom_vline(xintercept = limit2, linetype = "twodash", color="purple")
     
     # Save graph with peak points
     ggsave(paste0(file,"_plot.pdf"), sp, path=inDir, scale=1, dpi=300)
-    
-    
-    
+ 
     ## Add peak parameters in data frame
     data[nrow(data) + 1, ] <- c(file, ring_width, ratio, condition)
   }
@@ -109,18 +103,18 @@ write.csv(dataStats, file = file.path(outDir, "peaksStats.csv", fsep = dirSep))
 ```{r}
 # read peak's width
 df <- read.csv(file = file.path(outDir, "peaksStats.csv", fsep = dirSep), sep = ',', header = TRUE)
-p <- ggplot(df, aes(x=Condition, y=PeakWidth)) + geom_dotplot(binaxis='y', stackdir='center') +
-stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), 
-        geom="errorbar", color="red", width=0.2) + stat_summary(fun=mean, geom="point", color="red") + xlab("Condition") + ylab("ring width (µm)")
+p <- ggplot(df, aes(x = Condition, y = PeakWidth)) + geom_dotplot(binaxis = 'y', stackdir = 'center', binwidth = 0.05) +
+stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
+        geom = 'errorbar', color = 'red', width = 0.5) + stat_summary(fun = mean, geom = 'point', color = 'red') + xlab('Condition') + ylab('ring width (µm)')
 ggsave(file = 'peakWith_plot.pdf', p, path=outDir, scale=1, dpi=300)
 ```
 #### Plot peak's ratio ring / nucleus
 ```{r}
 # read peak's ratio
 df <- read.csv(file = file.path(outDir, "peaksStats.csv", fsep = dirSep), sep = ',', header = TRUE)
-p <- ggplot(df, aes(x=Condition, y=df$Ratio.ring_nucleus.)) + geom_dotplot(binaxis='y', stackdir='center') +
-stat_summary(fun.data=mean_sdl, fun.args = list(mult=1), 
-        geom="errorbar", color="red", width=0.2) + stat_summary(fun=mean, geom="point", color="red") + xlab("Condition") + ylab("ratio ring/nucleus intensity")
+p <- ggplot(df, aes(x = Condition, y = df$Ratio.ring_nucleus.)) + geom_dotplot(binaxis = 'y', stackdir = 'center', dotsize = 0.5) +
+stat_summary(fun.data = mean_se, fun.args = list(mult = 1), 
+        geom = 'errorbar', color = 'red', width = 0.2) + stat_summary(fun = mean, geom = 'point', color = 'red') + xlab('Condition') + ylab('ratio ring/nucleus intensity')
 ggsave(file = 'ratio_plot.pdf', p, path=outDir, scale=1, dpi=300)
 ```
 #### Analyze peak's width
