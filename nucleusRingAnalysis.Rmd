@@ -8,7 +8,7 @@ output: html_notebook
 
 ```{r}
 # install missing libraries
-requiredPackages = c("base", "ggplot2", "IDPmisc", "tools", "rstudioapi", "svDialogs", "stringr", "pracma")
+requiredPackages = c("base", "ggplot2", "IDPmisc", "tools", "rstudioapi", "svDialogs", "stringr")
 for(i in requiredPackages){
   if(!require(i,character.only = TRUE)) install.packages(i)
   library(i,character.only = TRUE)
