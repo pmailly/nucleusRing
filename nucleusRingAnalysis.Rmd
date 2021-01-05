@@ -105,14 +105,14 @@ write.csv(dataStats, file = file.path(outDir, "peaksStats.csv", fsep = dirSep))
 df <- read.csv(file = file.path(outDir, "peaksStats.csv", fsep = dirSep), sep = ',', header = TRUE)
 p <- ggplot(df, aes(x = Condition, y = PeakWidth)) + geom_dotplot(binaxis = 'y', stackdir = 'center', binwidth = 0.05) +
 stat_summary(fun.data = mean_se, fun.args = list(mult = 1),
-        geom = 'errorbar', color = 'red', width = 0.5) + stat_summary(fun = mean, geom = 'point', color = 'red') + xlab('Condition') + ylab('ring width (µm)')
+        geom = 'errorbar', color = 'red', width = 0.2) + stat_summary(fun = mean, geom = 'point', color = 'red') + xlab('Condition') + ylab('ring width (µm)')
 ggsave(file = 'peakWith_plot.pdf', p, path=outDir, scale=1, dpi=300)
 ```
 #### Plot peak's ratio ring / nucleus
 ```{r}
 # read peak's ratio
 df <- read.csv(file = file.path(outDir, "peaksStats.csv", fsep = dirSep), sep = ',', header = TRUE)
-p <- ggplot(df, aes(x = Condition, y = df$Ratio.ring_nucleus.)) + geom_dotplot(binaxis = 'y', stackdir = 'center', dotsize = 0.5) +
+p <- ggplot(df, aes(x = Condition, y = df$Ratio.ring_nucleus.)) + geom_dotplot(binaxis = 'y', stackdir = 'center', binwidth = 0.05) +
 stat_summary(fun.data = mean_se, fun.args = list(mult = 1), 
         geom = 'errorbar', color = 'red', width = 0.2) + stat_summary(fun = mean, geom = 'point', color = 'red') + xlab('Condition') + ylab('ratio ring/nucleus intensity')
 ggsave(file = 'ratio_plot.pdf', p, path=outDir, scale=1, dpi=300)
